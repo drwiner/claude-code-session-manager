@@ -19,6 +19,9 @@ export function Block({ block }: { block: ContentBlock }) {
       );
     case "tool_use": {
       const b = block as { name: string; input: unknown; id?: string };
+      if (b.name === "Bash" && isBashInput(b.input)) {
+        return <BashToolUse input={b.input} />;
+      }
       const inputStr = stringify(b.input);
       const isLarge = inputStr.length > LARGE_THRESHOLD;
       return (
@@ -64,6 +67,43 @@ export function Block({ block }: { block: ContentBlock }) {
       );
     }
   }
+}
+
+type BashInput = {
+  command: string;
+  description?: string;
+  run_in_background?: boolean;
+  timeout?: number;
+};
+
+function isBashInput(v: unknown): v is BashInput {
+  return (
+    !!v &&
+    typeof v === "object" &&
+    typeof (v as { command?: unknown }).command === "string"
+  );
+}
+
+function BashToolUse({ input }: { input: BashInput }) {
+  const { command, description, run_in_background, timeout } = input;
+  const isLarge = command.length > LARGE_THRESHOLD;
+  const label = description ? `🖥 Bash · ${description}` : "🖥 Bash";
+  return (
+    <Collapsible label={label} defaultOpen={!isLarge} tone="tool">
+      <div className="rounded bg-black/70 p-2 font-mono text-[11px] leading-snug ring-1 ring-emerald-500/20">
+        <pre className="whitespace-pre-wrap break-words text-emerald-300">
+          <span className="select-none text-emerald-500/70">$ </span>
+          <span className="text-emerald-100">{command}</span>
+        </pre>
+        {(run_in_background || typeof timeout === "number") && (
+          <div className="mt-1 text-[10px] text-white/40">
+            {run_in_background ? "background · " : ""}
+            {typeof timeout === "number" ? `timeout ${timeout}ms` : ""}
+          </div>
+        )}
+      </div>
+    </Collapsible>
+  );
 }
 
 function TextBlock({ text }: { text: string; role: string }) {
