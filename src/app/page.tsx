@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listProjects, listSessions, totalSessionCount } from "@/lib/queries";
+import { listProjects, listSessions, searchProjects, totalSessionCount } from "@/lib/queries";
 import { getMeta } from "@/lib/db";
 import { SearchBar } from "@/components/SearchBar";
 import { SessionRow } from "@/components/SessionRow";
@@ -8,7 +8,17 @@ import { ReindexButton } from "@/components/ReindexButton";
 export const dynamic = "force-dynamic";
 
 interface Props {
-  searchParams: Promise<{ q?: string; project?: string; sub?: string }>;
+  searchParams: Promise<{ q?: string; project?: string; sub?: string; limit?: string }>;
+}
+
+const LIMIT_CHOICES = [10, 20, 50, 100, 300] as const;
+const DEFAULT_LIMIT = 300;
+
+function parseLimit(raw: string | undefined): number {
+  if (!raw) return DEFAULT_LIMIT;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_LIMIT;
+  return Math.max(1, Math.min(1000, Math.floor(n)));
 }
 
 export default async function Home({ searchParams }: Props) {
@@ -16,15 +26,17 @@ export default async function Home({ searchParams }: Props) {
   const q = sp.q?.trim() ?? "";
   const projectId = sp.project?.trim() || undefined;
   const includeSidechain = sp.sub === "1";
+  const limit = parseLimit(sp.limit);
 
   const sessions = listSessions({
     search: q || undefined,
     projectId,
     includeSidechain,
-    limit: 300,
+    limit,
   });
   const total = totalSessionCount();
   const projects = listProjects();
+  const matchedProjects = q ? searchProjects(q) : [];
   const lastIndexed = getMeta("last_indexed_at");
 
   return (
@@ -53,12 +65,45 @@ export default async function Home({ searchParams }: Props) {
                 ...(q ? { q } : {}),
                 ...(projectId ? { project: projectId } : {}),
                 ...(includeSidechain ? {} : { sub: "1" }),
+                ...(limit !== DEFAULT_LIMIT ? { limit: String(limit) } : {}),
               }).toString()}`}
               className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] text-white/70 hover:border-white/30 hover:text-white"
             >
               <span className={includeSidechain ? "text-amber-300" : "text-white/40"}>●</span>
               Include subagents
             </Link>
+          </div>
+          <div className="mt-3">
+            <div className="mb-1 text-[10px] uppercase tracking-wider text-white/40">
+              Show last
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {LIMIT_CHOICES.map((n) => {
+                const active = n === limit;
+                const label = n === DEFAULT_LIMIT ? "All" : String(n);
+                const params = new URLSearchParams({
+                  ...(q ? { q } : {}),
+                  ...(projectId ? { project: projectId } : {}),
+                  ...(includeSidechain ? { sub: "1" } : {}),
+                  ...(n !== DEFAULT_LIMIT ? { limit: String(n) } : {}),
+                });
+                const href = `/${params.toString() ? `?${params.toString()}` : ""}`;
+                return (
+                  <Link
+                    key={n}
+                    href={href}
+                    className={
+                      "rounded border px-2 py-1 text-[11px] " +
+                      (active
+                        ? "border-white/40 bg-white/10 text-white"
+                        : "border-white/10 bg-white/[0.03] text-white/70 hover:border-white/30 hover:text-white")
+                    }
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
           <nav className="mt-4">
             <div className="mb-1 text-[10px] uppercase tracking-wider text-white/40">Projects</div>
@@ -94,6 +139,36 @@ export default async function Home({ searchParams }: Props) {
         </aside>
 
         <section className="min-w-0 flex-1">
+          {q && matchedProjects.length > 0 && (
+            <div className="mb-4 rounded border border-white/10 bg-white/[0.02] p-3">
+              <div className="mb-1 text-[10px] uppercase tracking-wider text-white/40">
+                Projects matching “{q}”
+              </div>
+              <ul className="space-y-px text-sm">
+                {matchedProjects.map((p) => {
+                  const params = new URLSearchParams({
+                    project: p.project_id,
+                    ...(includeSidechain ? { sub: "1" } : {}),
+                    ...(limit !== DEFAULT_LIMIT ? { limit: String(limit) } : {}),
+                  });
+                  return (
+                    <li key={p.project_id} className="flex items-baseline justify-between gap-3">
+                      <Link
+                        href={`/?${params.toString()}`}
+                        className="truncate text-white/80 hover:underline"
+                        title={p.original_path}
+                      >
+                        {p.original_path.replace(/^\/Users\/[^/]+\//, "~/")}
+                      </Link>
+                      <span className="shrink-0 text-[11px] text-white/40">
+                        {p.session_count} session{p.session_count === 1 ? "" : "s"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
           {sessions.length === 0 ? (
             <div className="rounded border border-dashed border-white/10 p-8 text-center text-sm text-white/50">
               {q || projectId ? (

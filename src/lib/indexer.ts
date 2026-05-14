@@ -3,6 +3,7 @@ import fsp from "fs/promises";
 import path from "path";
 import { getDb, setMeta } from "./db";
 import { decodeProjectFolderHeuristic } from "./decode-path";
+import { streamJsonl } from "./jsonl";
 import { indexSession } from "./parse-session";
 import { PROJECTS_DIR } from "./paths";
 import type { SessionMeta, TurnRef } from "./types";
@@ -78,7 +79,9 @@ async function runIndexerImpl(): Promise<IndexerStats> {
     const projectDir = path.join(PROJECTS_DIR, projectId);
     stats.projectsScanned += 1;
 
-    // Try to read sessions-index.json for the authoritative originalPath
+    // Resolve original_path with the most reliable source available, in
+    // order: a session's recorded cwd (lossless, round-trips to the encoded
+    // folder name) → sessions-index.json → hyphen-decoding heuristic.
     let originalPath = decodeProjectFolderHeuristic(projectId);
     let indexEntries: Map<string, SessionsIndexEntry> = new Map();
     try {
@@ -89,6 +92,10 @@ async function runIndexerImpl(): Promise<IndexerStats> {
       for (const e of parsed.entries ?? []) indexEntries.set(e.sessionId, e);
     } catch {
       // no sessions-index.json — fine
+    }
+    const cwdFromSession = await peekProjectCwd(projectDir);
+    if (cwdFromSession && encodeProjectFolder(cwdFromSession) === projectId) {
+      originalPath = cwdFromSession;
     }
 
     db.prepare(
@@ -214,10 +221,68 @@ async function indexOneSession(args: IndexOneArgs): Promise<boolean> {
     turnCount: meta.turnCount,
     firstTs: meta.firstTs ?? args.seed?.created ?? null,
     lastTs: meta.lastTs ?? args.seed?.modified ?? null,
+    lastUserTs: meta.lastUserTs ?? null,
   };
 
   upsertSession(fullMeta, turns);
   return true;
+}
+
+/**
+ * Encode a path the way Claude Code does: replace every "/" with "-".
+ * The encoded form must equal the project's folder name for the cwd to be
+ * a valid (lossless) source of truth for that project's original path.
+ */
+function encodeProjectFolder(p: string): string {
+  return p.replaceAll("/", "-");
+}
+
+/**
+ * Read just enough of any JSONL under the project (top-level or under
+ * <sessionId>/subagents/) to find a record with a `cwd` field. Returns
+ * null if no JSONL exists or none carries a cwd.
+ */
+async function peekProjectCwd(projectDir: string): Promise<string | null> {
+  const candidates = await collectJsonlPaths(projectDir);
+  for (const fp of candidates) {
+    try {
+      for await (const { value } of streamJsonl<Record<string, unknown>>(fp)) {
+        const cwd = value?.cwd;
+        if (typeof cwd === "string" && cwd.length > 0) return cwd;
+      }
+    } catch {
+      // try the next file
+    }
+  }
+  return null;
+}
+
+async function collectJsonlPaths(projectDir: string): Promise<string[]> {
+  const out: string[] = [];
+  let entries: fs.Dirent[] = [];
+  try {
+    entries = await fsp.readdir(projectDir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    if (e.isFile() && e.name.endsWith(".jsonl")) {
+      out.push(path.join(projectDir, e.name));
+    } else if (e.isDirectory() && /^[0-9a-f-]{36}$/i.test(e.name)) {
+      const subDir = path.join(projectDir, e.name, "subagents");
+      try {
+        const subFiles = await fsp.readdir(subDir, { withFileTypes: true });
+        for (const sf of subFiles) {
+          if (sf.isFile() && sf.name.endsWith(".jsonl")) {
+            out.push(path.join(subDir, sf.name));
+          }
+        }
+      } catch {
+        // no subagents dir
+      }
+    }
+  }
+  return out;
 }
 
 function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
@@ -229,13 +294,13 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
          is_sidechain, parent_session_id, agent_id,
          cwd, git_branch, model, version,
          ai_title, first_prompt, summary,
-         message_count, turn_count, first_ts, last_ts
+         message_count, turn_count, first_ts, last_ts, last_user_ts
        ) VALUES (
          @session_id, @project_id, @file_path, @file_mtime, @file_size,
          @is_sidechain, @parent_session_id, @agent_id,
          @cwd, @git_branch, @model, @version,
          @ai_title, @first_prompt, @summary,
-         @message_count, @turn_count, @first_ts, @last_ts
+         @message_count, @turn_count, @first_ts, @last_ts, @last_user_ts
        )
        ON CONFLICT(session_id) DO UPDATE SET
          project_id=excluded.project_id,
@@ -255,7 +320,8 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
          message_count=excluded.message_count,
          turn_count=excluded.turn_count,
          first_ts=excluded.first_ts,
-         last_ts=excluded.last_ts`,
+         last_ts=excluded.last_ts,
+         last_user_ts=excluded.last_user_ts`,
     ).run({
       session_id: meta.sessionId,
       project_id: meta.projectId,
@@ -276,6 +342,7 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
       turn_count: meta.turnCount,
       first_ts: meta.firstTs,
       last_ts: meta.lastTs,
+      last_user_ts: meta.lastUserTs,
     });
 
     db.prepare("DELETE FROM turns WHERE session_id = ?").run(meta.sessionId);

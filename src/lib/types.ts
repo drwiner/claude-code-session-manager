@@ -20,6 +20,8 @@ export interface SessionMeta {
   turnCount: number;
   firstTs: string | null;
   lastTs: string | null;
+  /** Timestamp of the most recent user-authored turn (i.e. real prompt). */
+  lastUserTs: string | null;
 }
 
 export interface TurnRef {

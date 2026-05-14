@@ -27,8 +27,11 @@ export function SessionRow({ s }: { s: SessionListRow }) {
 
   return (
     <li className="group flex items-center gap-3 py-1.5">
-      <div className="w-16 shrink-0 text-right text-[11px] tabular-nums text-white/40">
-        {formatTs(s.last_ts)}
+      <div
+        className="w-16 shrink-0 text-right text-[11px] tabular-nums text-white/40"
+        title={s.last_user_ts ? `last user input ${new Date(s.last_user_ts).toLocaleString()}` : ""}
+      >
+        {formatTs(s.last_user_ts ?? s.last_ts)}
       </div>
       <div className="min-w-0 flex-1">
         <Link

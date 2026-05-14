@@ -15,6 +15,7 @@ export interface SessionListRow {
   turn_count: number;
   first_ts: string | null;
   last_ts: string | null;
+  last_user_ts: string | null;
   is_sidechain: number;
   parent_session_id: string | null;
 }
@@ -40,32 +41,36 @@ export function listSessions(opts: ListSessionsOpts = {}): SessionListRow[] {
     params.projectId = opts.projectId;
   }
 
+  // Sort by last user input timestamp (the moment the human last typed something),
+  // falling back to last_ts when a session has no user turn timestamp recorded.
+  const orderBy = "ORDER BY COALESCE(s.last_user_ts, s.last_ts) DESC";
+
   let sql: string;
   if (opts.search && opts.search.trim().length > 0) {
     params.q = ftsQuery(opts.search.trim());
     sql = `
       SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.ai_title,
              s.first_prompt, s.summary, s.git_branch, s.model,
-             s.message_count, s.turn_count, s.first_ts, s.last_ts,
+             s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
              s.is_sidechain, s.parent_session_id
         FROM sessions_fts f
         JOIN sessions s ON s.session_id = f.session_id
         LEFT JOIN projects p ON p.project_id = s.project_id
        WHERE sessions_fts MATCH @q
        ${wheres.length ? "AND " + wheres.join(" AND ") : ""}
-       ORDER BY s.last_ts DESC
+       ${orderBy}
        LIMIT @limit OFFSET @offset
     `;
   } else {
     sql = `
       SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.ai_title,
              s.first_prompt, s.summary, s.git_branch, s.model,
-             s.message_count, s.turn_count, s.first_ts, s.last_ts,
+             s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
              s.is_sidechain, s.parent_session_id
         FROM sessions s
         LEFT JOIN projects p ON p.project_id = s.project_id
        ${wheres.length ? "WHERE " + wheres.join(" AND ") : ""}
-       ORDER BY s.last_ts DESC
+       ${orderBy}
        LIMIT @limit OFFSET @offset
     `;
   }
@@ -93,7 +98,7 @@ export function getSession(sessionId: string): SessionFull | null {
     .prepare(
       `SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.ai_title,
               s.first_prompt, s.summary, s.git_branch, s.model,
-              s.message_count, s.turn_count, s.first_ts, s.last_ts,
+              s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
               s.is_sidechain, s.parent_session_id,
               s.file_path, s.file_mtime, s.file_size, s.version
          FROM sessions s
@@ -155,7 +160,7 @@ export function listSubagentsFor(parentSessionId: string): SessionListRow[] {
     .prepare(
       `SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.ai_title,
               s.first_prompt, s.summary, s.git_branch, s.model,
-              s.message_count, s.turn_count, s.first_ts, s.last_ts,
+              s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
               s.is_sidechain, s.parent_session_id
          FROM sessions s
          LEFT JOIN projects p ON p.project_id = s.project_id
@@ -165,7 +170,13 @@ export function listSubagentsFor(parentSessionId: string): SessionListRow[] {
     .all(parentSessionId) as SessionListRow[];
 }
 
-export function listProjects(): { project_id: string; original_path: string; session_count: number }[] {
+export interface ProjectListRow {
+  project_id: string;
+  original_path: string;
+  session_count: number;
+}
+
+export function listProjects(): ProjectListRow[] {
   return getDb()
     .prepare(
       `SELECT p.project_id, p.original_path, COUNT(s.session_id) AS session_count
@@ -174,7 +185,30 @@ export function listProjects(): { project_id: string; original_path: string; ses
         GROUP BY p.project_id
         ORDER BY p.original_path ASC`,
     )
-    .all() as { project_id: string; original_path: string; session_count: number }[];
+    .all() as ProjectListRow[];
+}
+
+/**
+ * Substring match against project path or project_id (case-insensitive).
+ * Used to surface projects in the search results when a user types a path-y
+ * fragment like "datacenter-data".
+ */
+export function searchProjects(query: string, limit = 20): ProjectListRow[] {
+  const q = query.trim();
+  if (!q) return [];
+  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  return getDb()
+    .prepare(
+      `SELECT p.project_id, p.original_path, COUNT(s.session_id) AS session_count
+         FROM projects p
+         LEFT JOIN sessions s ON s.project_id = p.project_id AND s.is_sidechain = 0
+        WHERE p.original_path LIKE @like ESCAPE '\\'
+           OR p.project_id LIKE @like ESCAPE '\\'
+        GROUP BY p.project_id
+        ORDER BY p.original_path ASC
+        LIMIT @limit`,
+    )
+    .all({ like, limit }) as ProjectListRow[];
 }
 
 export function totalSessionCount(): number {

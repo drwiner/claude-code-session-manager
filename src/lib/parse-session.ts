@@ -78,6 +78,7 @@ export async function indexSession(filePath: string): Promise<{
   let firstPrompt: string | null = null;
   let firstTs: string | null = null;
   let lastTs: string | null = null;
+  let lastUserTs: string | null = null;
   let messageCount = 0;
   let isSidechain = false;
 
@@ -128,6 +129,7 @@ export async function indexSession(filePath: string): Promise<{
         const text = condenseText(extractText(value.message?.content));
         if (!firstPrompt && text.length > 0) firstPrompt = truncate(text, 200);
         messageCount += 1;
+        if (ts) lastUserTs = ts;
         openTurn("user", ts, byteStart);
         if (cur) {
           cur.byteEnd = byteEnd;
@@ -212,6 +214,7 @@ export async function indexSession(filePath: string): Promise<{
     turnCount: refs.length,
     firstTs,
     lastTs,
+    lastUserTs,
   };
   return { meta, turns: refs };
 }
