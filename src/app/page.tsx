@@ -1,6 +1,13 @@
 import Link from "next/link";
-import { listProjects, listSessions, searchProjects, totalSessionCount } from "@/lib/queries";
+import {
+  getSessionsByIds,
+  listProjects,
+  listSessions,
+  searchProjects,
+  totalSessionCount,
+} from "@/lib/queries";
 import { getMeta } from "@/lib/db";
+import { readActiveSessions } from "@/lib/active-sessions";
 import { SearchBar } from "@/components/SearchBar";
 import { SessionRow } from "@/components/SessionRow";
 import { ReindexButton } from "@/components/ReindexButton";
@@ -38,6 +45,24 @@ export default async function Home({ searchParams }: Props) {
   const projects = listProjects();
   const matchedProjects = q ? searchProjects(q) : [];
   const lastIndexed = getMeta("last_indexed_at");
+
+  const active = readActiveSessions();
+  const activeRows = (() => {
+    if (active.length === 0) return [];
+    const rows = getSessionsByIds(active.map((a) => a.sessionId));
+    const byId = new Map(rows.map((r) => [r.session_id, r]));
+    const out: {
+      row: (typeof rows)[number];
+      status: string | null;
+      itermSessionId: string | null;
+      tty: string | null;
+    }[] = [];
+    for (const a of active) {
+      const row = byId.get(a.sessionId);
+      if (row) out.push({ row, status: a.status, itermSessionId: a.itermSessionId, tty: a.tty });
+    }
+    return out;
+  })();
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-6">
@@ -119,26 +144,63 @@ export default async function Home({ searchParams }: Props) {
                   All projects ({total})
                 </Link>
               </li>
-              {projects.map((p) => (
-                <li key={p.project_id}>
-                  <Link
-                    href={`/?project=${encodeURIComponent(p.project_id)}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
-                    className={
-                      "block truncate rounded px-2 py-1 hover:bg-white/5 " +
-                      (projectId === p.project_id ? "bg-white/10 text-white" : "text-white/70")
-                    }
-                    title={p.original_path}
-                  >
-                    {p.original_path.replace(/^\/Users\/[^/]+\//, "~/")}
-                    <span className="ml-1 text-white/40">({p.session_count})</span>
-                  </Link>
-                </li>
-              ))}
+              {projects.map((p) => {
+                const onlySub = p.session_count === 0 && p.subagent_count > 0;
+                const href = `/?project=${encodeURIComponent(p.project_id)}${q ? `&q=${encodeURIComponent(q)}` : ""}${onlySub ? "&sub=1" : ""}`;
+                return (
+                  <li key={p.project_id}>
+                    <Link
+                      href={href}
+                      className={
+                        "block truncate rounded px-2 py-1 hover:bg-white/5 " +
+                        (projectId === p.project_id ? "bg-white/10 text-white" : "text-white/70")
+                      }
+                      title={
+                        p.subagent_count > 0
+                          ? `${p.original_path} — ${p.session_count} sessions, ${p.subagent_count} subagents`
+                          : p.original_path
+                      }
+                    >
+                      {p.original_path.replace(/^\/Users\/[^/]+\//, "~/")}
+                      <span className="ml-1 text-white/40">
+                        ({p.session_count}
+                        {p.subagent_count > 0 && (
+                          <span className="text-amber-300/70"> +{p.subagent_count}</span>
+                        )}
+                        )
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           </nav>
         </aside>
 
         <section className="min-w-0 flex-1">
+          {activeRows.length > 0 && (
+            <div className="mb-4 rounded border border-emerald-400/20 bg-emerald-400/[0.03] p-3">
+              <div className="mb-1 flex items-baseline justify-between">
+                <div className="text-[10px] uppercase tracking-wider text-emerald-300/70">
+                  Active sessions
+                </div>
+                <div className="text-[10px] text-white/40">
+                  {activeRows.length} running
+                </div>
+              </div>
+              <ul className="divide-y divide-white/5">
+                {activeRows.map(({ row, status, itermSessionId, tty }) => (
+                  <SessionRow
+                    key={`active-${row.session_id}`}
+                    s={row}
+                    activeStatus={status}
+                    itermSessionId={itermSessionId}
+                    tty={tty}
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
           {q && matchedProjects.length > 0 && (
             <div className="mb-4 rounded border border-white/10 bg-white/[0.02] p-3">
               <div className="mb-1 text-[10px] uppercase tracking-wider text-white/40">
@@ -146,9 +208,10 @@ export default async function Home({ searchParams }: Props) {
               </div>
               <ul className="space-y-px text-sm">
                 {matchedProjects.map((p) => {
+                  const onlySub = p.session_count === 0 && p.subagent_count > 0;
                   const params = new URLSearchParams({
                     project: p.project_id,
-                    ...(includeSidechain ? { sub: "1" } : {}),
+                    ...(includeSidechain || onlySub ? { sub: "1" } : {}),
                     ...(limit !== DEFAULT_LIMIT ? { limit: String(limit) } : {}),
                   });
                   return (
@@ -162,6 +225,12 @@ export default async function Home({ searchParams }: Props) {
                       </Link>
                       <span className="shrink-0 text-[11px] text-white/40">
                         {p.session_count} session{p.session_count === 1 ? "" : "s"}
+                        {p.subagent_count > 0 && (
+                          <span className="text-amber-300/70">
+                            {" "}
+                            + {p.subagent_count} sub
+                          </span>
+                        )}
                       </span>
                     </li>
                   );

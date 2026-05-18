@@ -174,14 +174,17 @@ export interface ProjectListRow {
   project_id: string;
   original_path: string;
   session_count: number;
+  subagent_count: number;
 }
 
 export function listProjects(): ProjectListRow[] {
   return getDb()
     .prepare(
-      `SELECT p.project_id, p.original_path, COUNT(s.session_id) AS session_count
+      `SELECT p.project_id, p.original_path,
+              COALESCE(SUM(CASE WHEN s.is_sidechain = 0 THEN 1 ELSE 0 END), 0) AS session_count,
+              COALESCE(SUM(CASE WHEN s.is_sidechain = 1 THEN 1 ELSE 0 END), 0) AS subagent_count
          FROM projects p
-         LEFT JOIN sessions s ON s.project_id = p.project_id AND s.is_sidechain = 0
+         LEFT JOIN sessions s ON s.project_id = p.project_id
         GROUP BY p.project_id
         ORDER BY p.original_path ASC`,
     )
@@ -199,9 +202,11 @@ export function searchProjects(query: string, limit = 20): ProjectListRow[] {
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   return getDb()
     .prepare(
-      `SELECT p.project_id, p.original_path, COUNT(s.session_id) AS session_count
+      `SELECT p.project_id, p.original_path,
+              COALESCE(SUM(CASE WHEN s.is_sidechain = 0 THEN 1 ELSE 0 END), 0) AS session_count,
+              COALESCE(SUM(CASE WHEN s.is_sidechain = 1 THEN 1 ELSE 0 END), 0) AS subagent_count
          FROM projects p
-         LEFT JOIN sessions s ON s.project_id = p.project_id AND s.is_sidechain = 0
+         LEFT JOIN sessions s ON s.project_id = p.project_id
         WHERE p.original_path LIKE @like ESCAPE '\\'
            OR p.project_id LIKE @like ESCAPE '\\'
         GROUP BY p.project_id
@@ -209,6 +214,22 @@ export function searchProjects(query: string, limit = 20): ProjectListRow[] {
         LIMIT @limit`,
     )
     .all({ like, limit }) as ProjectListRow[];
+}
+
+export function getSessionsByIds(sessionIds: string[]): SessionListRow[] {
+  if (sessionIds.length === 0) return [];
+  const placeholders = sessionIds.map(() => "?").join(",");
+  return getDb()
+    .prepare(
+      `SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.ai_title,
+              s.first_prompt, s.summary, s.git_branch, s.model,
+              s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
+              s.is_sidechain, s.parent_session_id
+         FROM sessions s
+         LEFT JOIN projects p ON p.project_id = s.project_id
+        WHERE s.session_id IN (${placeholders})`,
+    )
+    .all(...sessionIds) as SessionListRow[];
 }
 
 export function totalSessionCount(): number {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { SessionListRow } from "@/lib/queries";
 import { CopyButton } from "./CopyButton";
+import { RevealInItermButton } from "./RevealInItermButton";
 import { buildResumeCommand } from "@/lib/shell-escape";
 
 function formatTs(ts: string | null): string {
@@ -21,9 +22,26 @@ function shortPath(p: string | null): string {
   return p.replace(/^\/Users\/[^/]+\//, "~/");
 }
 
-export function SessionRow({ s }: { s: SessionListRow }) {
+export function SessionRow({
+  s,
+  activeStatus,
+  itermSessionId,
+  tty,
+}: {
+  s: SessionListRow;
+  activeStatus?: string | null;
+  itermSessionId?: string | null;
+  tty?: string | null;
+}) {
   const title = s.ai_title?.trim() || s.summary?.trim() || s.first_prompt?.trim() || "(untitled)";
   const resumeCmd = buildResumeCommand(s.cwd, s.session_id);
+
+  const statusColor =
+    activeStatus === "busy"
+      ? "bg-emerald-400"
+      : activeStatus
+      ? "bg-sky-400"
+      : null;
 
   return (
     <li className="group flex items-center gap-3 py-1.5">
@@ -39,6 +57,12 @@ export function SessionRow({ s }: { s: SessionListRow }) {
           className="block truncate text-sm hover:underline"
           title={title}
         >
+          {statusColor && (
+            <span
+              className={`mr-1.5 inline-block h-2 w-2 rounded-full align-middle ${statusColor}`}
+              title={activeStatus ?? undefined}
+            />
+          )}
           {title}
         </Link>
         <div className="flex items-center gap-2 text-[11px] text-white/40">
@@ -55,9 +79,17 @@ export function SessionRow({ s }: { s: SessionListRow }) {
           <span>{s.turn_count} turns</span>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
-        <CopyButton value={s.session_id} label="ID" title="Copy session ID" />
-        <CopyButton value={resumeCmd} label="Resume" title={resumeCmd} />
+      <div className="flex shrink-0 items-center gap-1">
+        {itermSessionId && (
+          <RevealInItermButton
+            itermSessionId={itermSessionId}
+            title={tty ? `Reveal iTerm session (${tty})` : "Reveal in iTerm"}
+          />
+        )}
+        <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+          <CopyButton value={s.session_id} label="ID" title="Copy session ID" />
+          <CopyButton value={resumeCmd} label="Resume" title={resumeCmd} />
+        </div>
       </div>
     </li>
   );
