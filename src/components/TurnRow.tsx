@@ -36,6 +36,30 @@ export function TurnRow({
     setOpen(forceExpanded);
   }, [forceExpanded]);
 
+  // Auto-expand and scroll to this turn when the URL hash targets it
+  // (used by search "turn N" links from the session list).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const target = `turn-${turn.turn_index}`;
+    const matches = () => window.location.hash === `#${target}`;
+    if (matches()) {
+      setOpen(true);
+      requestAnimationFrame(() => {
+        document.getElementById(target)?.scrollIntoView({ block: "start" });
+      });
+    }
+    const onHashChange = () => {
+      if (matches()) {
+        setOpen(true);
+        requestAnimationFrame(() => {
+          document.getElementById(target)?.scrollIntoView({ block: "start" });
+        });
+      }
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [turn.turn_index]);
+
   const tools: string[] = turn.tool_names ? (JSON.parse(turn.tool_names) as string[]) : [];
   const uniqueTools = Array.from(new Set(tools));
   const isUser = turn.role === "user";
@@ -44,7 +68,7 @@ export function TurnRow({
     : "bg-sky-500/15 text-sky-200 border-sky-500/30";
 
   return (
-    <li className="px-1">
+    <li id={`turn-${turn.turn_index}`} className="scroll-mt-4 px-1">
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-3 py-1.5 text-left hover:bg-white/[0.02]"

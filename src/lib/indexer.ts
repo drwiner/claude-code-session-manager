@@ -392,6 +392,21 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
       meta.gitBranch ?? "",
       projectRow?.original_path ?? "",
     );
+
+    // Per-turn body index — currently user-prompt text only. Skipped for
+    // assistant turns and for user turns whose extracted body is empty
+    // (e.g. tool-result-only turns) since FTS rows with empty body just
+    // bloat the index.
+    db.prepare("DELETE FROM turns_fts WHERE session_id = ?").run(meta.sessionId);
+    const insertTurnFts = db.prepare(
+      `INSERT INTO turns_fts(session_id, turn_index, body) VALUES(?,?,?)`,
+    );
+    for (const t of turns) {
+      if (t.role !== "user") continue;
+      const body = (t.userText ?? "").trim();
+      if (!body) continue;
+      insertTurnFts.run(meta.sessionId, t.index, body);
+    }
   });
   tx();
 }

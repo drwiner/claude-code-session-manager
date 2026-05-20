@@ -1,5 +1,9 @@
 import Link from "next/link";
-import type { SessionListRow } from "@/lib/queries";
+import {
+  SEARCH_HIGHLIGHT_END,
+  SEARCH_HIGHLIGHT_START,
+  type SessionListRow,
+} from "@/lib/queries";
 import { CopyButton } from "./CopyButton";
 import { RevealInItermButton } from "./RevealInItermButton";
 import { buildCodexResumeCommand, buildResumeCommand } from "@/lib/shell-escape";
@@ -20,6 +24,24 @@ function formatTs(ts: string | null): string {
 function shortPath(p: string | null): string {
   if (!p) return "";
   return p.replace(/^\/Users\/[^/]+\//, "~/");
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderSnippetHtml(snippet: string): string {
+  const escaped = escapeHtml(snippet);
+  return escaped
+    .split(SEARCH_HIGHLIGHT_START)
+    .join('<mark class="rounded-sm bg-amber-300/30 px-0.5 text-amber-100">')
+    .split(SEARCH_HIGHLIGHT_END)
+    .join("</mark>");
 }
 
 export function SessionRow({
@@ -76,6 +98,27 @@ export function SessionRow({
           )}
           {title}
         </Link>
+        {s.match_snippet && (
+          <Link
+            href={
+              s.match_turn_index != null
+                ? `/sessions/${encodeURIComponent(s.session_id)}#turn-${s.match_turn_index}`
+                : `/sessions/${encodeURIComponent(s.session_id)}`
+            }
+            className="mt-0.5 block truncate text-[11px] text-white/60 hover:text-white"
+            title="Jump to matching turn"
+          >
+            {s.match_turn_index != null && (
+              <span className="mr-1.5 rounded border border-amber-300/30 bg-amber-300/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-200 align-middle">
+                turn {s.match_turn_index}
+              </span>
+            )}
+            <span
+              className="align-middle"
+              dangerouslySetInnerHTML={{ __html: renderSnippetHtml(s.match_snippet) }}
+            />
+          </Link>
+        )}
         <div className="flex items-center gap-2 text-[11px] text-white/40">
           <span className="truncate" title={s.original_path ?? ""}>
             {shortPath(s.original_path)}

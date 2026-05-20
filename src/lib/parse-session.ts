@@ -194,6 +194,7 @@ export async function indexSession(filePath: string): Promise<{
       hasThinking: t.hasThinking,
       toolNames: t.toolNames,
       subagentSessionIds: detectSubagentIds(t.toolNames, t.toolInputs),
+      userText: t.role === "user" ? t.userText : undefined,
     };
   });
 

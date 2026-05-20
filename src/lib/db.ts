@@ -79,6 +79,16 @@ function migrate(db: Database.Database) {
       tokenize = 'porter unicode61'
     );
 
+    -- Per-turn body index so search can find a term mentioned mid-conversation,
+    -- not just in the session-level title/first_prompt. Currently we only index
+    -- user-authored turn text (the indexer leaves assistant/tool rows out).
+    CREATE VIRTUAL TABLE IF NOT EXISTS turns_fts USING fts5(
+      session_id UNINDEXED,
+      turn_index UNINDEXED,
+      body,
+      tokenize = 'porter unicode61'
+    );
+
     CREATE TABLE IF NOT EXISTS meta (
       key TEXT PRIMARY KEY,
       value TEXT
@@ -99,6 +109,14 @@ function migrate(db: Database.Database) {
          )
        WHERE last_user_ts IS NULL
     `);
+  });
+
+  // Force a full reindex once so turns_fts (added in this revision) gets
+  // populated for sessions that were indexed before the table existed. The
+  // mtime/size check in the indexer skips otherwise-unchanged sessions, so
+  // we invalidate the mtime cache here to make every session re-parse.
+  runOnce(db, "force_reindex_for_turns_fts_v1", () => {
+    db.exec(`UPDATE sessions SET file_mtime = 0;`);
   });
 
   // The original indexer derived projects.original_path from a lossy

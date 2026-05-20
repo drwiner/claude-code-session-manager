@@ -38,6 +38,12 @@ export interface TurnRef {
   toolNames: string[];
   /** session_ids of subagents spawned by this turn, if any */
   subagentSessionIds: string[];
+  /**
+   * Untruncated user-prompt text for this turn — only set for user turns and
+   * only used when populating turns_fts at index time. Not loaded back from
+   * the DB.
+   */
+  userText?: string;
 }
 
 export interface TurnDetail {

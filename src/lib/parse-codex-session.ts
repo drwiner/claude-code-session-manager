@@ -196,6 +196,7 @@ export async function indexCodexSession(filePath: string): Promise<{
     hasThinking: t.hasThinking,
     toolNames: t.toolNames,
     subagentSessionIds: [],
+    userText: t.role === "user" ? t.userText : undefined,
   }));
 
   const sid = sessionId ?? deriveCodexIdFromPath(filePath);

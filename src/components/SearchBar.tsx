@@ -25,7 +25,7 @@ export function SearchBar({ initial }: { initial: string }) {
         type="search"
         value={v}
         onChange={(e) => setV(e.target.value)}
-        placeholder="Search prompts, titles, branches…"
+        placeholder="Search messages, titles, prompts, branches…"
         className="w-full rounded border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm outline-none focus:border-white/30"
       />
       {pending && <div className="mt-1 text-[10px] text-white/40">searching…</div>}
