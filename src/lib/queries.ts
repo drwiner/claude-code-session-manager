@@ -1,11 +1,12 @@
 import { getDb } from "./db";
-import type { TurnRef } from "./types";
+import type { SessionSource, TurnRef } from "./types";
 
 export interface SessionListRow {
   session_id: string;
   project_id: string;
   original_path: string | null;
   cwd: string | null;
+  source: SessionSource;
   ai_title: string | null;
   first_prompt: string | null;
   summary: string | null;
@@ -49,7 +50,7 @@ export function listSessions(opts: ListSessionsOpts = {}): SessionListRow[] {
   if (opts.search && opts.search.trim().length > 0) {
     params.q = ftsQuery(opts.search.trim());
     sql = `
-      SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.ai_title,
+      SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.source, s.ai_title,
              s.first_prompt, s.summary, s.git_branch, s.model,
              s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
              s.is_sidechain, s.parent_session_id
@@ -63,7 +64,7 @@ export function listSessions(opts: ListSessionsOpts = {}): SessionListRow[] {
     `;
   } else {
     sql = `
-      SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.ai_title,
+      SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.source, s.ai_title,
              s.first_prompt, s.summary, s.git_branch, s.model,
              s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
              s.is_sidechain, s.parent_session_id
@@ -96,7 +97,7 @@ export interface SessionFull extends SessionListRow {
 export function getSession(sessionId: string): SessionFull | null {
   const row = getDb()
     .prepare(
-      `SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.ai_title,
+      `SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.source, s.ai_title,
               s.first_prompt, s.summary, s.git_branch, s.model,
               s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
               s.is_sidechain, s.parent_session_id,
@@ -158,7 +159,7 @@ export function getTurnRef(sessionId: string, turnIndex: number): TurnRef | null
 export function listSubagentsFor(parentSessionId: string): SessionListRow[] {
   return getDb()
     .prepare(
-      `SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.ai_title,
+      `SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.source, s.ai_title,
               s.first_prompt, s.summary, s.git_branch, s.model,
               s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
               s.is_sidechain, s.parent_session_id
@@ -221,7 +222,7 @@ export function getSessionsByIds(sessionIds: string[]): SessionListRow[] {
   const placeholders = sessionIds.map(() => "?").join(",");
   return getDb()
     .prepare(
-      `SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.ai_title,
+      `SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.source, s.ai_title,
               s.first_prompt, s.summary, s.git_branch, s.model,
               s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
               s.is_sidechain, s.parent_session_id

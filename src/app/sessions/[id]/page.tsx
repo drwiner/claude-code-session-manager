@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSession, listSubagentsFor, listTurns } from "@/lib/queries";
-import { buildResumeCommand } from "@/lib/shell-escape";
+import { buildCodexResumeCommand, buildResumeCommand } from "@/lib/shell-escape";
 import { CopyButton } from "@/components/CopyButton";
 import { TurnList } from "@/components/TurnList";
 
@@ -19,7 +19,10 @@ export default async function SessionPage({ params }: Props) {
 
   const turns = listTurns(sessionId);
   const subagents = listSubagentsFor(sessionId);
-  const resumeCmd = buildResumeCommand(s.cwd, s.session_id);
+  const isCodex = s.source === "codex";
+  const resumeCmd = isCodex
+    ? buildCodexResumeCommand(s.cwd, s.session_id)
+    : buildResumeCommand(s.cwd, s.session_id);
 
   const title = s.ai_title?.trim() || s.summary?.trim() || s.first_prompt?.trim() || "(untitled)";
 
@@ -32,7 +35,17 @@ export default async function SessionPage({ params }: Props) {
         ← All sessions
       </Link>
       <header className="mt-2 border-b border-white/10 pb-4">
-        <h1 className="text-lg font-semibold leading-tight">{title}</h1>
+        <h1 className="flex items-center gap-2 text-lg font-semibold leading-tight">
+          {isCodex && (
+            <span
+              className="rounded border border-purple-400/30 bg-purple-400/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-purple-300"
+              title="Codex session"
+            >
+              codex
+            </span>
+          )}
+          <span>{title}</span>
+        </h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-white/50">
           <span>
             <span className="text-white/30">id </span>

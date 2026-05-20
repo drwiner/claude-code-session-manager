@@ -1,11 +1,14 @@
 import type { ContentBlock } from "./records";
 
+export type SessionSource = "claude" | "codex";
+
 export interface SessionMeta {
   sessionId: string;
   projectId: string;
   filePath: string;
   fileMtime: number;
   fileSize: number;
+  source: SessionSource;
   isSidechain: boolean;
   parentSessionId: string | null;
   agentId: string | null;
@@ -60,6 +63,7 @@ export interface SessionRow {
   file_path: string;
   file_mtime: number;
   file_size: number;
+  source: SessionSource;
   is_sidechain: number;
   parent_session_id: string | null;
   agent_id: string | null;

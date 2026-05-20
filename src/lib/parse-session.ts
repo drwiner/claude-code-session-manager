@@ -66,7 +66,7 @@ interface AccumulatorTurn {
 
 /** Build the full turn index for a session JSONL. Single pass, streaming. */
 export async function indexSession(filePath: string): Promise<{
-  meta: Omit<SessionMeta, "projectId" | "fileMtime" | "fileSize">;
+  meta: Omit<SessionMeta, "projectId" | "fileMtime" | "fileSize" | "source">;
   turns: TurnRef[];
 }> {
   let sessionId: string | null = null;

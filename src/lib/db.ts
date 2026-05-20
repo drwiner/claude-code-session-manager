@@ -88,6 +88,8 @@ function migrate(db: Database.Database) {
   // Add columns introduced after the initial schema.
   addColumnIfMissing(db, "sessions", "last_user_ts", "TEXT");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_last_user_ts ON sessions(last_user_ts DESC);`);
+  addColumnIfMissing(db, "sessions", "source", "TEXT NOT NULL DEFAULT 'claude'");
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);`);
   runOnce(db, "backfill_last_user_ts_v1", () => {
     db.exec(`
       UPDATE sessions

@@ -5,4 +5,6 @@ export const HOME = os.homedir();
 export const CLAUDE_DIR = path.join(HOME, ".claude");
 export const PROJECTS_DIR = path.join(CLAUDE_DIR, "projects");
 export const ACTIVE_SESSIONS_DIR = path.join(CLAUDE_DIR, "sessions");
+export const CODEX_DIR = path.join(HOME, ".codex");
+export const CODEX_SESSIONS_DIR = path.join(CODEX_DIR, "sessions");
 export const DB_PATH = path.join(process.cwd(), "data", "index.db");

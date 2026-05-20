@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { SessionListRow } from "@/lib/queries";
 import { CopyButton } from "./CopyButton";
 import { RevealInItermButton } from "./RevealInItermButton";
-import { buildResumeCommand } from "@/lib/shell-escape";
+import { buildCodexResumeCommand, buildResumeCommand } from "@/lib/shell-escape";
 
 function formatTs(ts: string | null): string {
   if (!ts) return "";
@@ -34,7 +34,10 @@ export function SessionRow({
   tty?: string | null;
 }) {
   const title = s.ai_title?.trim() || s.summary?.trim() || s.first_prompt?.trim() || "(untitled)";
-  const resumeCmd = buildResumeCommand(s.cwd, s.session_id);
+  const isCodex = s.source === "codex";
+  const resumeCmd = isCodex
+    ? buildCodexResumeCommand(s.cwd, s.session_id)
+    : buildResumeCommand(s.cwd, s.session_id);
 
   const statusColor =
     activeStatus === "busy"
@@ -62,6 +65,14 @@ export function SessionRow({
               className={`mr-1.5 inline-block h-2 w-2 rounded-full align-middle ${statusColor}`}
               title={activeStatus ?? undefined}
             />
+          )}
+          {isCodex && (
+            <span
+              className="mr-1.5 rounded border border-purple-400/30 bg-purple-400/10 px-1 py-px text-[9px] uppercase tracking-wider text-purple-300 align-middle"
+              title="Codex session"
+            >
+              codex
+            </span>
           )}
           {title}
         </Link>

@@ -12,3 +12,10 @@ export function buildResumeCommand(cwd: string | null | undefined, sessionId: st
   }
   return `claude --resume ${sessionId}`;
 }
+
+export function buildCodexResumeCommand(cwd: string | null | undefined, sessionId: string): string {
+  if (cwd && cwd.length > 0) {
+    return `cd ${shellSingleQuote(cwd)} && codex resume ${sessionId}`;
+  }
+  return `codex resume ${sessionId}`;
+}

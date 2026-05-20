@@ -5,8 +5,9 @@ import { getDb, setMeta } from "./db";
 import { decodeProjectFolderHeuristic } from "./decode-path";
 import { streamJsonl } from "./jsonl";
 import { indexSession } from "./parse-session";
-import { PROJECTS_DIR } from "./paths";
-import type { SessionMeta, TurnRef } from "./types";
+import { indexCodexSession } from "./parse-codex-session";
+import { CODEX_SESSIONS_DIR, PROJECTS_DIR } from "./paths";
+import type { SessionMeta, SessionSource, TurnRef } from "./types";
 
 interface SessionsIndexEntry {
   sessionId: string;
@@ -165,6 +166,8 @@ async function runIndexerImpl(): Promise<IndexerStats> {
     }
   }
 
+  await indexCodexSessions(stats);
+
   setMeta("last_indexed_at", String(Date.now()));
   stats.durationMs = Date.now() - t0;
   console.log(
@@ -183,6 +186,7 @@ interface IndexOneArgs {
   parentSessionId: string | null;
   agentId: string | null;
   seed: SessionsIndexEntry | undefined;
+  source?: SessionSource;
 }
 
 async function indexOneSession(args: IndexOneArgs): Promise<boolean> {
@@ -199,7 +203,11 @@ async function indexOneSession(args: IndexOneArgs): Promise<boolean> {
     return false;
   }
 
-  const { meta, turns } = await indexSession(args.filePath);
+  const source: SessionSource = args.source ?? "claude";
+  const { meta, turns } =
+    source === "codex"
+      ? await indexCodexSession(args.filePath)
+      : await indexSession(args.filePath);
 
   const fullMeta: SessionMeta = {
     sessionId: args.sessionId,
@@ -207,6 +215,7 @@ async function indexOneSession(args: IndexOneArgs): Promise<boolean> {
     filePath: args.filePath,
     fileMtime,
     fileSize,
+    source,
     isSidechain: args.parentSessionId !== null || meta.isSidechain,
     parentSessionId: args.parentSessionId,
     agentId: args.agentId,
@@ -291,13 +300,13 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
     db.prepare(
       `INSERT INTO sessions (
          session_id, project_id, file_path, file_mtime, file_size,
-         is_sidechain, parent_session_id, agent_id,
+         source, is_sidechain, parent_session_id, agent_id,
          cwd, git_branch, model, version,
          ai_title, first_prompt, summary,
          message_count, turn_count, first_ts, last_ts, last_user_ts
        ) VALUES (
          @session_id, @project_id, @file_path, @file_mtime, @file_size,
-         @is_sidechain, @parent_session_id, @agent_id,
+         @source, @is_sidechain, @parent_session_id, @agent_id,
          @cwd, @git_branch, @model, @version,
          @ai_title, @first_prompt, @summary,
          @message_count, @turn_count, @first_ts, @last_ts, @last_user_ts
@@ -307,6 +316,7 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
          file_path=excluded.file_path,
          file_mtime=excluded.file_mtime,
          file_size=excluded.file_size,
+         source=excluded.source,
          is_sidechain=excluded.is_sidechain,
          parent_session_id=excluded.parent_session_id,
          agent_id=excluded.agent_id,
@@ -328,6 +338,7 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
       file_path: meta.filePath,
       file_mtime: Math.floor(meta.fileMtime),
       file_size: meta.fileSize,
+      source: meta.source,
       is_sidechain: meta.isSidechain ? 1 : 0,
       parent_session_id: meta.parentSessionId,
       agent_id: meta.agentId,
@@ -383,4 +394,78 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
     );
   });
   tx();
+}
+
+/**
+ * Walk ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl and index each rollout
+ * as a session row with source='codex'. Sessions are grouped into projects
+ * by cwd using the same `/` → `-` encoding Claude Code uses, so a workspace
+ * that's been used by both tools surfaces under a single project entry.
+ */
+async function indexCodexSessions(stats: IndexerStats): Promise<void> {
+  if (!fs.existsSync(CODEX_SESSIONS_DIR)) return;
+  const files: string[] = [];
+  await collectCodexJsonl(CODEX_SESSIONS_DIR, files);
+
+  const db = getDb();
+  for (const fp of files) {
+    try {
+      const head = await readCodexHead(fp);
+      if (!head) continue;
+      const cwd = head.cwd ?? "/unknown";
+      const projectId = encodeProjectFolder(cwd);
+      db.prepare(
+        `INSERT INTO projects(project_id, original_path, dir_path, last_indexed_at)
+         VALUES(?,?,?,?)
+         ON CONFLICT(project_id) DO UPDATE SET
+           original_path=excluded.original_path,
+           last_indexed_at=excluded.last_indexed_at`,
+      ).run(projectId, cwd, path.dirname(fp), Date.now());
+
+      const changed = await indexOneSession({
+        projectId,
+        sessionId: head.sessionId,
+        filePath: fp,
+        parentSessionId: null,
+        agentId: null,
+        seed: undefined,
+        source: "codex",
+      });
+      if (changed) stats.sessionsChanged += 1;
+      else stats.sessionsSkipped += 1;
+    } catch (err) {
+      stats.errors.push({ file: fp, message: (err as Error).message });
+    }
+  }
+}
+
+async function collectCodexJsonl(root: string, out: string[]): Promise<void> {
+  let entries: fs.Dirent[] = [];
+  try {
+    entries = await fsp.readdir(root, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    const fp = path.join(root, e.name);
+    if (e.isDirectory()) {
+      await collectCodexJsonl(fp, out);
+    } else if (e.isFile() && e.name.endsWith(".jsonl")) {
+      out.push(fp);
+    }
+  }
+}
+
+async function readCodexHead(
+  filePath: string,
+): Promise<{ sessionId: string; cwd: string | null } | null> {
+  for await (const { value } of streamJsonl<Record<string, unknown>>(filePath)) {
+    if (value?.type !== "session_meta") continue;
+    const payload = value.payload as Record<string, unknown> | undefined;
+    const id = typeof payload?.id === "string" ? payload.id : null;
+    const cwd = typeof payload?.cwd === "string" ? payload.cwd : null;
+    if (id) return { sessionId: id, cwd };
+    return null;
+  }
+  return null;
 }
