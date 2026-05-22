@@ -2,7 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Claude Sessions",
+  title: "Agentic Coding Sessions",
   description: "Browse Claude Code sessions on this machine",
 };
 

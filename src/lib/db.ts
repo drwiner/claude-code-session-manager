@@ -100,6 +100,9 @@ function migrate(db: Database.Database) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_last_user_ts ON sessions(last_user_ts DESC);`);
   addColumnIfMissing(db, "sessions", "source", "TEXT NOT NULL DEFAULT 'claude'");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);`);
+  addColumnIfMissing(db, "sessions", "origin_host", "TEXT");
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_origin_host ON sessions(origin_host);`);
+  addColumnIfMissing(db, "sessions", "repo_snapshots", "TEXT");
   runOnce(db, "backfill_last_user_ts_v1", () => {
     db.exec(`
       UPDATE sessions

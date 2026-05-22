@@ -25,6 +25,10 @@ export interface SessionMeta {
   lastTs: string | null;
   /** Timestamp of the most recent user-authored turn (i.e. real prompt). */
   lastUserTs: string | null;
+  /** Hostname of the machine that first claimed this session JSONL. */
+  originHost: string | null;
+  /** Per-cwd HEAD snapshots captured at index time, JSON-encoded. */
+  repoSnapshots: string | null;
 }
 
 export interface TurnRef {

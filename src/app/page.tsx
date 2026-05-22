@@ -8,6 +8,7 @@ import {
 } from "@/lib/queries";
 import { getMeta } from "@/lib/db";
 import { readActiveSessions } from "@/lib/active-sessions";
+import { LOCAL_HOST } from "@/lib/origin-host";
 import { SearchBar } from "@/components/SearchBar";
 import { SessionRow } from "@/components/SessionRow";
 import { ReindexButton } from "@/components/ReindexButton";
@@ -68,7 +69,7 @@ export default async function Home({ searchParams }: Props) {
     <main className="mx-auto max-w-7xl px-6 py-6">
       <header className="flex flex-wrap items-baseline justify-between gap-4 border-b border-white/10 pb-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Claude Sessions</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Agentic Coding Sessions</h1>
           <p className="text-xs text-white/50">
             {total.toLocaleString()} sessions · {projects.length} projects
             {lastIndexed && (
@@ -196,6 +197,7 @@ export default async function Home({ searchParams }: Props) {
                     activeStatus={status}
                     itermSessionId={itermSessionId}
                     tty={tty}
+                    localHost={LOCAL_HOST}
                   />
                 ))}
               </ul>
@@ -249,7 +251,7 @@ export default async function Home({ searchParams }: Props) {
           ) : (
             <ul className="divide-y divide-white/5">
               {sessions.map((s) => (
-                <SessionRow key={s.session_id} s={s} />
+                <SessionRow key={s.session_id} s={s} localHost={LOCAL_HOST} />
               ))}
             </ul>
           )}

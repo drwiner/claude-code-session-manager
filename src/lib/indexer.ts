@@ -6,6 +6,8 @@ import { decodeProjectFolderHeuristic } from "./decode-path";
 import { streamJsonl } from "./jsonl";
 import { indexSession } from "./parse-session";
 import { indexCodexSession } from "./parse-codex-session";
+import { resolveOriginHost } from "./origin-host";
+import { resolveRepoSnapshots, readRepoSnapshotsSidecar } from "./git-snapshot";
 import { CODEX_SESSIONS_DIR, PROJECTS_DIR } from "./paths";
 import type { SessionMeta, SessionSource, TurnRef } from "./types";
 
@@ -193,13 +195,27 @@ async function indexOneSession(args: IndexOneArgs): Promise<boolean> {
   const stat = await fsp.stat(args.filePath);
   const fileMtime = stat.mtimeMs;
   const fileSize = stat.size;
+  const originHost = resolveOriginHost(args.filePath);
 
   const db = getDb();
   const existing = db
-    .prepare("SELECT file_mtime, file_size FROM sessions WHERE session_id = ?")
-    .get(args.sessionId) as { file_mtime: number; file_size: number } | undefined;
+    .prepare(
+      "SELECT file_mtime, file_size, origin_host FROM sessions WHERE session_id = ?",
+    )
+    .get(args.sessionId) as
+    | { file_mtime: number; file_size: number; origin_host: string | null }
+    | undefined;
 
   if (existing && existing.file_mtime === fileMtime && existing.file_size === fileSize) {
+    if (originHost !== null && existing.origin_host !== originHost) {
+      db.prepare("UPDATE sessions SET origin_host = ? WHERE session_id = ?")
+        .run(originHost, args.sessionId);
+    }
+    const sidecarSnaps = readRepoSnapshotsSidecar(args.filePath);
+    if (sidecarSnaps.length > 0) {
+      db.prepare("UPDATE sessions SET repo_snapshots = ? WHERE session_id = ?")
+        .run(JSON.stringify(sidecarSnaps), args.sessionId);
+    }
     return false;
   }
 
@@ -231,6 +247,11 @@ async function indexOneSession(args: IndexOneArgs): Promise<boolean> {
     firstTs: meta.firstTs ?? args.seed?.created ?? null,
     lastTs: meta.lastTs ?? args.seed?.modified ?? null,
     lastUserTs: meta.lastUserTs ?? null,
+    originHost,
+    repoSnapshots: (() => {
+      const snaps = resolveRepoSnapshots(args.filePath, meta.cwd ?? null);
+      return snaps.length > 0 ? JSON.stringify(snaps) : null;
+    })(),
   };
 
   upsertSession(fullMeta, turns);
@@ -303,13 +324,15 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
          source, is_sidechain, parent_session_id, agent_id,
          cwd, git_branch, model, version,
          ai_title, first_prompt, summary,
-         message_count, turn_count, first_ts, last_ts, last_user_ts
+         message_count, turn_count, first_ts, last_ts, last_user_ts,
+         origin_host, repo_snapshots
        ) VALUES (
          @session_id, @project_id, @file_path, @file_mtime, @file_size,
          @source, @is_sidechain, @parent_session_id, @agent_id,
          @cwd, @git_branch, @model, @version,
          @ai_title, @first_prompt, @summary,
-         @message_count, @turn_count, @first_ts, @last_ts, @last_user_ts
+         @message_count, @turn_count, @first_ts, @last_ts, @last_user_ts,
+         @origin_host, @repo_snapshots
        )
        ON CONFLICT(session_id) DO UPDATE SET
          project_id=excluded.project_id,
@@ -331,7 +354,9 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
          turn_count=excluded.turn_count,
          first_ts=excluded.first_ts,
          last_ts=excluded.last_ts,
-         last_user_ts=excluded.last_user_ts`,
+         last_user_ts=excluded.last_user_ts,
+         origin_host=COALESCE(excluded.origin_host, sessions.origin_host),
+         repo_snapshots=COALESCE(excluded.repo_snapshots, sessions.repo_snapshots)`,
     ).run({
       session_id: meta.sessionId,
       project_id: meta.projectId,
@@ -354,6 +379,8 @@ function upsertSession(meta: SessionMeta, turns: TurnRef[]) {
       first_ts: meta.firstTs,
       last_ts: meta.lastTs,
       last_user_ts: meta.lastUserTs,
+      origin_host: meta.originHost,
+      repo_snapshots: meta.repoSnapshots,
     });
 
     db.prepare("DELETE FROM turns WHERE session_id = ?").run(meta.sessionId);

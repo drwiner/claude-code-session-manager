@@ -54,7 +54,7 @@ interface AccumulatorTurn {
  * often carry only environment-context wrappers.
  */
 export async function indexCodexSession(filePath: string): Promise<{
-  meta: Omit<SessionMeta, "projectId" | "fileMtime" | "fileSize" | "source">;
+  meta: Omit<SessionMeta, "projectId" | "fileMtime" | "fileSize" | "source" | "originHost" | "repoSnapshots">;
   turns: TurnRef[];
 }> {
   let sessionId: string | null = null;

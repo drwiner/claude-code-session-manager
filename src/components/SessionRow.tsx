@@ -49,11 +49,13 @@ export function SessionRow({
   activeStatus,
   itermSessionId,
   tty,
+  localHost,
 }: {
   s: SessionListRow;
   activeStatus?: string | null;
   itermSessionId?: string | null;
   tty?: string | null;
+  localHost?: string | null;
 }) {
   const title = s.ai_title?.trim() || s.summary?.trim() || s.first_prompt?.trim() || "(untitled)";
   const isCodex = s.source === "codex";
@@ -67,6 +69,27 @@ export function SessionRow({
       : activeStatus
       ? "bg-sky-400"
       : null;
+
+  const isRemoteHost = !!(s.origin_host && localHost && s.origin_host !== localHost);
+  const hostLabel = s.origin_host?.replace(/\.local$/, "") ?? null;
+
+  const primarySnapshot = (() => {
+    if (!s.repo_snapshots) return null;
+    try {
+      const arr = JSON.parse(s.repo_snapshots) as {
+        cwd: string;
+        branch: string | null;
+        head: string;
+        dirty: boolean;
+        capturedAt: number;
+      }[];
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      const match = s.cwd ? arr.find((x) => x.cwd === s.cwd) : null;
+      return match ?? arr[0];
+    } catch {
+      return null;
+    }
+  })();
 
   return (
     <li className="group flex items-center gap-3 py-1.5">
@@ -120,6 +143,24 @@ export function SessionRow({
           </Link>
         )}
         <div className="flex items-center gap-2 text-[11px] text-white/40">
+          {hostLabel && (
+            <>
+              <span
+                className={
+                  "shrink-0 truncate " +
+                  (isRemoteHost ? "text-cyan-300" : "text-white/30")
+                }
+                title={
+                  isRemoteHost
+                    ? `Originated on ${s.origin_host}`
+                    : `Originated on this machine (${s.origin_host})`
+                }
+              >
+                {hostLabel}
+              </span>
+              <span>·</span>
+            </>
+          )}
           <span className="truncate" title={s.original_path ?? ""}>
             {shortPath(s.original_path)}
           </span>
@@ -127,6 +168,20 @@ export function SessionRow({
             <>
               <span>·</span>
               <span className="truncate">{s.git_branch}</span>
+            </>
+          )}
+          {primarySnapshot && (
+            <>
+              <span>·</span>
+              <span
+                className="truncate font-mono text-white/50"
+                title={`HEAD ${primarySnapshot.head}${primarySnapshot.dirty ? " (dirty tree)" : ""} captured ${new Date(primarySnapshot.capturedAt).toLocaleString()}`}
+              >
+                @{primarySnapshot.head.slice(0, 7)}
+                {primarySnapshot.dirty && (
+                  <span className="ml-0.5 text-amber-300/80">*</span>
+                )}
+              </span>
             </>
           )}
           <span>·</span>

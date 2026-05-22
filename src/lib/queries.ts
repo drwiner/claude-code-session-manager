@@ -28,6 +28,8 @@ export interface SessionListRow {
   last_user_ts: string | null;
   is_sidechain: number;
   parent_session_id: string | null;
+  origin_host: string | null;
+  repo_snapshots: string | null;
   /** When the row came back from a search, an excerpt with highlight sentinels. */
   match_snippet?: string | null;
   /** Index of the user turn that matched, if the hit came from turns_fts. */
@@ -95,7 +97,7 @@ export function listSessions(opts: ListSessionsOpts = {}): SessionListRow[] {
       SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.source, s.ai_title,
              s.first_prompt, s.summary, s.git_branch, s.model,
              s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
-             s.is_sidechain, s.parent_session_id,
+             s.is_sidechain, s.parent_session_id, s.origin_host, s.repo_snapshots,
              m.match_turn_index, m.match_snippet
         FROM best_match m
         JOIN sessions s ON s.session_id = m.session_id
@@ -110,7 +112,7 @@ export function listSessions(opts: ListSessionsOpts = {}): SessionListRow[] {
       SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.source, s.ai_title,
              s.first_prompt, s.summary, s.git_branch, s.model,
              s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
-             s.is_sidechain, s.parent_session_id
+             s.is_sidechain, s.parent_session_id, s.origin_host, s.repo_snapshots
         FROM sessions s
         LEFT JOIN projects p ON p.project_id = s.project_id
        ${wheres.length ? "WHERE " + wheres.join(" AND ") : ""}
@@ -143,7 +145,7 @@ export function getSession(sessionId: string): SessionFull | null {
       `SELECT s.session_id, s.project_id, p.original_path, s.cwd, s.source, s.ai_title,
               s.first_prompt, s.summary, s.git_branch, s.model,
               s.message_count, s.turn_count, s.first_ts, s.last_ts, s.last_user_ts,
-              s.is_sidechain, s.parent_session_id,
+              s.is_sidechain, s.parent_session_id, s.origin_host, s.repo_snapshots,
               s.file_path, s.file_mtime, s.file_size, s.version
          FROM sessions s
          LEFT JOIN projects p ON p.project_id = s.project_id
