@@ -1,6 +1,6 @@
-# Claude Session Browser
+# Local AI Session Manager
 
-A local Next.js app for browsing, searching, and managing your Claude Code (and Codex) sessions. It indexes the JSONL transcripts that Claude Code writes to `~/.claude/projects` and exposes them through a fast, searchable web UI.
+A local Next.js app for browsing, searching, and managing your local AI coding sessions across multiple agents (Claude Code, Codex, and more). It indexes the JSONL transcripts each agent writes under your home directory and exposes them through a fast, searchable web UI.
 
 ## What it does
 
